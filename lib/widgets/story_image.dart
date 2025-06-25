@@ -6,6 +6,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../controller/story_controller.dart';
 import '../utils.dart';
+import 'dart:ui' as ui;
 
 /// Utitlity to load image (gif, png, jpg, etc) media just once. Resource is
 /// cached to disk with default configurations of [DefaultCacheManager].
@@ -20,37 +21,34 @@ class ImageLoader {
 
   ImageLoader(this.url, {this.requestHeaders});
 
-  /// Load image from disk cache first, if not found then load from network.
-  /// `onComplete` is called when [imageBytes] become available.
   void loadImage(VoidCallback onComplete) {
     if (this.frames != null) {
       this.state = LoadState.success;
       onComplete();
+      return;
     }
 
-    final fileStream = DefaultCacheManager().getFileStream(this.url,
-        headers: this.requestHeaders as Map<String, String>?);
+    final fileStream = DefaultCacheManager().getFileStream(
+      this.url,
+      headers: this.requestHeaders as Map<String, String>?,
+    );
+
     fileStream.listen(
-      (fileResponse) {
-        if (!(fileResponse is FileInfo)) return;
-        // the reason for this is that, when the cache manager fetches
-        // the image again from network, the provided `onComplete` should
-        // not be called again
-        if (this.frames != null) {
-          return;
-        }
+          (fileResponse) async {
+        if (fileResponse is! FileInfo) return;
+        if (this.frames != null) return;
 
-        final imageBytes = fileResponse.file.readAsBytesSync();
+        final imageBytes = await fileResponse.file.readAsBytes();
 
-        this.state = LoadState.success;
-        PaintingBinding.instance.instantiateImageCodec(imageBytes).then(
-            (codec) {
+        try {
+          final codec = await ui.instantiateImageCodec(imageBytes);
           this.frames = codec;
+          this.state = LoadState.success;
           onComplete();
-        }, onError: (error) {
+        } catch (error) {
           this.state = LoadState.failure;
           onComplete();
-        });
+        }
       },
       onError: (error) {
         this.state = LoadState.failure;
